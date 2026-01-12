@@ -9,6 +9,47 @@
  */
 
 // =============================================================================
+// BOOTSTRAP / INITIALIZATION
+// =============================================================================
+
+/**
+ * Initialize export docs with dynamic CSS loading and rendering.
+ * @param {string} base - Base URL for assets and data (e.g., 'https://example.com/export')
+ * @param {string} mode - Render mode: 'csv', 'tree', 'fields', or 'hierarchy'
+ * @param {string} prefix - Element ID prefix (e.g., 'csv' for 'csv-loading', 'csv-content')
+ */
+function initExportDocs(base, mode, prefix) {
+    // Load CSS dynamically
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = base + '/export_docs_wp.css';
+    document.head.appendChild(css);
+
+    var loadingEl = document.getElementById(prefix + '-loading');
+    var contentEl = document.getElementById(prefix + '-content');
+
+    loadExportData(base).then(function(data) {
+        switch (mode) {
+            case 'csv':
+                renderCsvDocs(data, contentEl, {showOverview: false});
+                break;
+            case 'tree':
+                renderJsonTree(data, contentEl, {minimal: true});
+                break;
+            case 'fields':
+                renderJsonFields(data, contentEl);
+                break;
+            case 'hierarchy':
+                renderHierarchy(data, contentEl);
+                break;
+        }
+        loadingEl.style.display = 'none';
+    }).catch(function(err) {
+        loadingEl.innerHTML = 'Error loading: ' + err.message;
+    });
+}
+
+// =============================================================================
 // CSV PARSING
 // =============================================================================
 
@@ -51,7 +92,7 @@ function parseCSVLine(line) {
 // DATA LOADING
 // =============================================================================
 
-async function loadExportData(basePath = '') {
+async function loadExportData(basePath = 'https://webtest.schmidtparty.com/export') {
     const prefix = basePath ? basePath + '/' : '';
     const [objectsRes, fieldsRes, enumValuesRes] = await Promise.all([
         fetch(`${prefix}objects.csv`),
@@ -146,8 +187,9 @@ function renderCsvNav(data, container, jsonFormatHref = '/json-export-format/') 
     container.innerHTML = html;
 }
 
-function renderCsvDocs(data, container) {
+function renderCsvDocs(data, container, options = {}) {
     const { fields, enumValues } = data;
+    const { showOverview = true } = options;
 
     // Group enum values by enum (use labels for CSV)
     const valuesByEnum = groupBy(enumValues, 'enum');
@@ -157,10 +199,13 @@ function renderCsvDocs(data, container) {
     const fieldsByObject = groupBy(csvFields, 'object');
     const sections = getCsvSections(data);
 
-    let html = `<div class="section" id="overview">
-        <h2>Overview</h2>
-        <p>The CSV export produces <strong>one row per depth interval per site</strong>. Site-level fields repeat on each row.</p>
-    </div>`;
+    let html = '';
+    if (showOverview) {
+        html += `<div class="section" id="overview">
+            <h2>Overview</h2>
+            <p>The CSV export produces <strong>one row per depth interval per site</strong>. Site-level fields repeat on each row.</p>
+        </div>`;
+    }
 
     for (const [objName, displayName] of sections) {
         const objFields = fieldsByObject[objName] || [];
@@ -229,8 +274,9 @@ function buildJsonTree(data) {
     return children;
 }
 
-function renderJsonTree(data, container) {
+function renderJsonTree(data, container, options = {}) {
     const children = buildJsonTree(data);
+    const { minimal = false } = options;
 
     const link = (name, obj, isArray = false) =>
         `<a href="#obj-${obj.toLowerCase()}">${name}${isArray ? '[]' : ''}</a>`;
@@ -248,12 +294,16 @@ function renderJsonTree(data, container) {
 
     const structureHtml = renderNode('Site', 'sites', true, 0);
 
-    container.innerHTML = `
-        <h2>JSON Structure</h2>
-        <p>The export API returns site data with the following structure. Click field names to jump to documentation.</p>
-        <pre><code>${structureHtml}</code></pre>
-        <p>Fields starting with <code>_</code> are derived fields expanded by the export.</p>
-    `;
+    if (minimal) {
+        container.innerHTML = `<pre><code>${structureHtml}</code></pre>`;
+    } else {
+        container.innerHTML = `
+            <h2>JSON Structure</h2>
+            <p>The export API returns site data with the following structure. Click field names to jump to documentation.</p>
+            <pre><code>${structureHtml}</code></pre>
+            <p>Fields starting with <code>_</code> are derived fields expanded by the export.</p>
+        `;
+    }
 }
 
 // =============================================================================

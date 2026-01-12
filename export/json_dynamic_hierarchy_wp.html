@@ -1,29 +1,16 @@
-<!-- LandPKS JSON Export Hierarchy - WordPress Embeddable -->
-<!-- Paste this into a WordPress HTML block or custom HTML widget -->
-<!-- Requires: export_docs.js and export_docs_wp.css hosted on api.terraso.org -->
-
-<link rel="stylesheet" href="export_docs_wp.css">
+<!-- LandPKS JSON Hierarchy - WordPress Embeddable -->
 
 <div id="export-docs-hierarchy" class="export-docs">
-    <div class="legend">
-        <div class="legend-title">Legend</div>
-        <span class="legend-item"><code>field_name</code> - JSON field name</span>
-        <span class="legend-item"><em>TypeName</em> - Object type</span>
-        <span class="legend-item"><code>[]</code> - Array field</span>
-    </div>
-
     <div id="hierarchy-loading">Loading...</div>
     <div id="hierarchy-content"></div>
 </div>
 
-<script src="export_docs.js"></script>
 <script>
 (function() {
-    loadExportData().then(data => {
-        renderHierarchy(data, document.getElementById('hierarchy-content'));
-        document.getElementById('hierarchy-loading').style.display = 'none';
-    }).catch(err => {
-        document.getElementById('hierarchy-loading').innerHTML = 'Error loading data: ' + err.message;
-    });
+    var BASE = 'https://webtest.schmidtparty.com/export';
+    var js = document.createElement('script');
+    js.src = BASE + '/export_docs.js';
+    js.onload = function() { initExportDocs(BASE, 'hierarchy', 'hierarchy'); };
+    document.body.appendChild(js);
 })();
 </script>
