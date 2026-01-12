@@ -1,0 +1,22 @@
+<!-- LandPKS JSON Export Structure - WordPress Embeddable -->
+<!-- Paste this into a WordPress HTML block or custom HTML widget -->
+<!-- Requires: export_docs.js and export_docs_wp.css hosted on api.terraso.org -->
+
+<link rel="stylesheet" href="export_docs_wp.css">
+
+<div id="export-docs-tree" class="export-docs">
+    <div id="tree-loading">Loading...</div>
+    <div id="tree-content" class="section"></div>
+</div>
+
+<script src="export_docs.js"></script>
+<script>
+(function() {
+    loadExportData().then(data => {
+        renderJsonTree(data, document.getElementById('tree-content'));
+        document.getElementById('tree-loading').style.display = 'none';
+    }).catch(err => {
+        document.getElementById('tree-loading').innerHTML = 'Error loading data: ' + err.message;
+    });
+})();
+</script>

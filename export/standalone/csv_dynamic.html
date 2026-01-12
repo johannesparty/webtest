@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:400,500,600&display=swap">
+    <link rel="stylesheet" href="export_docs.css">
+    <title>LandPKS CSV Export Format</title>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>LandPKS CSV Export Format</h1>
+            <p>Documentation for the CSV format returned by the export API</p>
+        </div>
+    </header>
+    <div class="container">
+        <div id="loading">Loading...</div>
+        <nav id="nav" style="display:none;"></nav>
+        <div id="content"></div>
+        <footer>
+            Dynamic version · <a href="https://github.com/techmatters/terraso-backend">terraso-backend</a>
+        </footer>
+    </div>
+
+    <script src="../export_docs.js"></script>
+    <script>
+    loadExportData('..').then(data => {
+        renderCsvNav(data, document.getElementById('nav'), 'json_dynamic_fields.html');
+        renderCsvDocs(data, document.getElementById('content'));
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('nav').style.display = 'block';
+    }).catch(err => {
+        document.getElementById('loading').innerHTML = `Error loading data: ${err.message}`;
+    });
+    </script>
+</body>
+</html>

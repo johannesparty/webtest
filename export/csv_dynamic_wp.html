@@ -1,0 +1,24 @@
+<!-- LandPKS CSV Export Format - WordPress Embeddable -->
+<!-- Paste this into a WordPress HTML block or custom HTML widget -->
+<!-- Requires: export_docs.js and export_docs_wp.css hosted on api.terraso.org -->
+
+<link rel="stylesheet" href="export_docs_wp.css">
+
+<div id="export-docs-csv" class="export-docs">
+    <div id="csv-nav" class="nav-links"></div>
+    <div id="csv-loading">Loading...</div>
+    <div id="csv-content"></div>
+</div>
+
+<script src="export_docs.js"></script>
+<script>
+(function() {
+    loadExportData().then(data => {
+        renderCsvNav(data, document.getElementById('csv-nav'), '/json-export-format/');
+        renderCsvDocs(data, document.getElementById('csv-content'));
+        document.getElementById('csv-loading').style.display = 'none';
+    }).catch(err => {
+        document.getElementById('csv-loading').innerHTML = 'Error loading data: ' + err.message;
+    });
+})();
+</script>

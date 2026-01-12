@@ -1,0 +1,38 @@
+<!-- LandPKS JSON Export Fields - WordPress Embeddable -->
+<!-- Paste this into a WordPress HTML block or custom HTML widget -->
+<!-- Requires: export_docs.js and export_docs_wp.css hosted on api.terraso.org -->
+
+<link rel="stylesheet" href="export_docs_wp.css">
+
+<div id="export-docs-fields" class="export-docs">
+    <div id="fields-nav" class="nav-links"></div>
+    <div id="fields-loading">Loading...</div>
+    <div id="fields-content"></div>
+</div>
+
+<script src="export_docs.js"></script>
+<script>
+(function() {
+    loadExportData().then(data => {
+        // Build navigation from objects
+        const objects = data.objects.filter(o => o.name !== 'Location');
+        const fieldsByObject = groupBy(data.fields, 'object');
+        const jsonObjects = objects.filter(obj => {
+            const fields = fieldsByObject[obj.name] || [];
+            return fields.some(f => f.json_name);
+        });
+
+        const navEl = document.getElementById('fields-nav');
+        let navHtml = '';
+        for (const obj of jsonObjects) {
+            navHtml += `<a href="#obj-${obj.name.toLowerCase()}">${obj.name}</a> `;
+        }
+        navEl.innerHTML = navHtml;
+
+        renderJsonFields(data, document.getElementById('fields-content'));
+        document.getElementById('fields-loading').style.display = 'none';
+    }).catch(err => {
+        document.getElementById('fields-loading').innerHTML = 'Error loading data: ' + err.message;
+    });
+})();
+</script>
