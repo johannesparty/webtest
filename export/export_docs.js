@@ -92,7 +92,7 @@ function parseCSVLine(line) {
 // DATA LOADING
 // =============================================================================
 
-async function loadExportData(basePath = 'https://webtest.schmidtparty.com/export') {
+async function loadExportData(basePath = '') {
     const prefix = basePath ? basePath + '/' : '';
     const [objectsRes, fieldsRes, enumValuesRes] = await Promise.all([
         fetch(`${prefix}objects.csv`),
