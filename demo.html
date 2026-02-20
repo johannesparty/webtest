@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soil Depth Profiles</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f0ece4; color: #333; padding: 24px; }
+  h1 { text-align: center; margin-bottom: 4px; font-size: 1.6rem; color: #3b2f1e; }
+  .subtitle { text-align: center; color: #7a6b57; margin-bottom: 28px; font-size: 0.9rem; }
+
+  /* Loading / Error */
+  #loading, #error { text-align: center; padding: 60px 20px; }
+  .spinner { width: 40px; height: 40px; border: 4px solid #d4c9b8; border-top-color: #7a6b57; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error { color: #8b3a3a; display: none; }
+  #error button { margin-top: 12px; padding: 8px 20px; border: 1px solid #8b3a3a; background: #fff; color: #8b3a3a; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+  #error button:hover { background: #8b3a3a; color: #fff; }
+
+  .sites { display: flex; flex-direction: column; gap: 28px; }
+
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+  .card-header { padding: 16px 20px 12px; border-bottom: 1px solid #e8e2d8; }
+  .card-header h2 { font-size: 1.15rem; color: #3b2f1e; }
+  .card-header .coords { font-size: 0.78rem; color: #8a7e6f; margin-top: 2px; font-family: monospace; }
+  .location-name { font-family: system-ui, -apple-system, sans-serif; color: #6b5b3e; }
+
+  /* Surface observations bar */
+  .obs-bar { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 10px 20px; border-bottom: 1px solid #e8e2d8; font-size: 0.82rem; }
+  .obs-bar .obs-item span:first-child { color: #8a7e6f; }
+  .obs-bar .obs-item span:last-child { color: #3b2f1e; font-weight: 500; margin-left: 4px; }
+
+  /* Tabs row */
+  .tabs-row { padding: 14px 20px 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .tab { padding: 4px 10px; font-size: 0.75rem; border: 1px solid #ccc; background: #f5f1eb; border-radius: 4px; cursor: pointer; color: #555; transition: all 0.15s; }
+  .tab:hover { background: #e8e0d4; }
+  .tab.active { background: #5b7a3a; color: #fff; border-color: #5b7a3a; }
+  .match-meta { font-size: 0.78rem; color: #7a6b57; margin-bottom: 4px; }
+
+  /* Comparison area */
+  .comparison { display: flex; align-items: flex-start; padding: 10px 20px 20px; gap: 0; }
+
+  .profile-group { flex: 1; min-width: 160px; max-width: 320px; }
+  .col-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; padding-bottom: 6px; }
+  .col-label-collected { color: #6b5b3e; }
+  .col-label-match { color: #3b6b2f; }
+
+  .profile-inner { display: flex; gap: 0; }
+
+  .ruler { width: 36px; flex-shrink: 0; position: relative; border-right: 2px solid #999; }
+  .ruler .tick { position: absolute; right: 0; font-size: 0.65rem; color: #777; line-height: 1; transform: translateY(-50%); }
+  .ruler .tick::after { content: ''; position: absolute; right: -2px; top: 50%; width: 6px; height: 1px; background: #999; }
+  .ruler .tick span { display: inline-block; margin-right: 8px; }
+
+  .column { position: relative; flex: 1; min-width: 100px; }
+
+  .col-gap { width: 32px; flex-shrink: 0; }
+
+  .layer { position: absolute; left: 0; right: 0; border: 1px solid rgba(0,0,0,0.12); display: flex; align-items: center; justify-content: center; flex-direction: column; overflow: hidden; cursor: default; transition: filter 0.15s; }
+  .layer:hover { filter: brightness(1.08); outline: 2px solid rgba(0,0,0,0.25); z-index: 1; }
+  .layer .tex { font-size: 0.78rem; font-weight: 600; text-shadow: 0 1px 2px rgba(255,255,255,0.6); }
+  .layer .tex.unknown { font-style: italic; opacity: 0.7; }
+  .layer .depth-label { font-size: 0.65rem; opacity: 0.7; margin-top: 2px; }
+
+  .collected-col .layer { border-style: dashed; border-color: rgba(0,0,0,0.18); }
+
+  .missing-color {
+    background-image: repeating-linear-gradient(
+      45deg, transparent, transparent 4px, rgba(0,0,0,0.08) 4px, rgba(0,0,0,0.08) 8px
+    ) !important;
+    background-color: #d9d1c5 !important;
+  }
+
+  .no-data-msg { font-size: 0.8rem; color: #b0a694; font-style: italic; padding: 20px 0; text-align: center; }
+
+  /* Tooltip */
+  .tooltip { position: fixed; background: #2c2316; color: #f0ece4; padding: 10px 14px; border-radius: 6px; font-size: 0.78rem; line-height: 1.5; pointer-events: none; z-index: 100; max-width: 280px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0; transition: opacity 0.15s; }
+  .tooltip.show { opacity: 1; }
+  .tooltip dt { font-weight: 600; color: #c9b998; }
+  .tooltip dd { margin-left: 0; margin-bottom: 4px; }
+
+  /* URL bar */
+  .url-bar { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 14px 20px; margin-bottom: 20px; }
+  .url-bar label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #8a7e6f; margin-bottom: 6px; }
+  .url-row { display: flex; gap: 8px; }
+  .url-bar input[type="url"] { flex: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.88rem; font-family: monospace; background: #faf8f5; min-width: 0; }
+  .url-bar input:focus { outline: none; border-color: #5b7a3a; box-shadow: 0 0 0 2px rgba(91,122,58,0.2); }
+  .url-bar button { padding: 8px 20px; border: none; background: #5b7a3a; color: #fff; border-radius: 6px; font-size: 0.88rem; cursor: pointer; white-space: nowrap; }
+  .url-bar button:hover { background: #4a6830; }
+  .cluster-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .cluster-row label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #8a7e6f; white-space: nowrap; }
+  .cluster-row input[type="range"] { flex: 1; accent-color: #5b7a3a; cursor: pointer; }
+  .cluster-value { font-size: 0.88rem; font-weight: 600; color: #3b2f1e; min-width: 70px; text-align: right; white-space: nowrap; }
+
+  /* Site groups */
+  .site-group { margin-bottom: 36px; }
+  .group-map { background: #fff; border-radius: 10px 10px 0 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+  .group-map .leaflet-container { height: 300px; width: 100%; }
+  .group-cards { display: flex; flex-direction: column; gap: 20px; padding-top: 20px; }
+
+  /* Numbered marker on map */
+  .numbered-marker {
+    background: #5b7a3a; color: #fff; border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700; border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  }
+
+  /* Cluster icon: pill showing contained site numbers */
+  .cluster-icon {
+    background: #3b5e1e; color: #fff; border-radius: 14px; padding: 0 10px;
+    height: 28px; display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700; border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+  }
+
+  /* Spiderfy lines */
+  .leaflet-cluster-anim .leaflet-marker-icon { transition: transform 0.3s ease-out, opacity 0.3s; }
+
+  /* Badge on card header */
+  .site-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #5b7a3a; color: #fff; font-size: 0.8rem; font-weight: 700;
+    margin-right: 8px; flex-shrink: 0; vertical-align: middle;
+    cursor: pointer; text-decoration: none; transition: background 0.15s;
+  }
+  .site-badge:hover { background: #4a6830; }
+  .card-header h2 { display: flex; align-items: center; }
+
+  @media (max-width: 500px) {
+    body { padding: 12px; }
+    .profile-group { min-width: 120px; }
+    .col-gap { width: 12px; }
+    .group-map .leaflet-container { height: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Soil Depth Profiles</h1>
+<p class="subtitle">Collected Data &amp; SSURGO Matches</p>
+
+<form id="url-form" class="url-bar">
+  <label for="url-input">JSON Data URL</label>
+  <div class="url-row">
+    <input type="url" id="url-input" placeholder="Paste a Terraso export JSON URL&hellip;">
+    <button type="submit">Load</button>
+  </div>
+  <div class="cluster-row">
+    <label>Group radius</label>
+    <input type="range" id="cluster-slider" min="0" max="100" value="50">
+    <span class="cluster-value" id="cluster-label">25 mi</span>
+  </div>
+</form>
+
+<div id="loading" style="display:none"><div class="spinner"></div>Loading soil data&hellip;</div>
+<div id="error"><p id="error-msg">Failed to load data.</p><button onclick="fetchData()">Retry</button></div>
+<div id="app" class="sites"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const DEFAULT_CLUSTER_MILES = 25;
+const SLIDER_MIN_MILES = 1;
+const SLIDER_MAX_MILES = 500;
+
+// Logarithmic slider: position 0-100 ↔ miles 1-500
+function sliderToMiles(pos) {
+  return Math.round(SLIDER_MIN_MILES * Math.pow(SLIDER_MAX_MILES / SLIDER_MIN_MILES, pos / 100));
+}
+function milesToSlider(miles) {
+  return Math.round(100 * Math.log(miles / SLIDER_MIN_MILES) / Math.log(SLIDER_MAX_MILES / SLIDER_MIN_MILES));
+}
+
+function getParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    data: params.get('data') || '',
+    cluster: parseFloat(params.get('cluster')) || DEFAULT_CLUSTER_MILES,
+  };
+}
+
+function buildPageUrl(dataUrl, clusterMiles) {
+  const url = new URL(window.location.pathname, window.location.origin);
+  if (dataUrl) url.searchParams.set('data', dataUrl);
+  if (clusterMiles !== DEFAULT_CLUSTER_MILES) url.searchParams.set('cluster', clusterMiles);
+  return url.toString();
+}
+
+// URL form
+const urlForm = document.getElementById('url-form');
+const urlInput = document.getElementById('url-input');
+const clusterSlider = document.getElementById('cluster-slider');
+const clusterLabel = document.getElementById('cluster-label');
+const curParams = getParams();
+urlInput.value = curParams.data;
+clusterSlider.value = milesToSlider(curParams.cluster);
+clusterLabel.textContent = curParams.cluster + ' mi';
+
+urlForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const val = urlInput.value.trim();
+  if (!val) return;
+  const miles = sliderToMiles(clusterSlider.value);
+  window.location.href = buildPageUrl(val, miles);
+});
+
+// Live re-render on slider drag (no data reload)
+let cachedSites = null;
+let renderTimeout = null;
+
+clusterSlider.addEventListener('input', () => {
+  const miles = sliderToMiles(clusterSlider.value);
+  clusterLabel.textContent = miles + ' mi';
+  if (!cachedSites) return;
+  // Debounce re-render slightly so dragging feels smooth
+  clearTimeout(renderTimeout);
+  renderTimeout = setTimeout(() => {
+    const newUrl = buildPageUrl(getParams().data, miles);
+    history.replaceState(null, '', newUrl);
+    renderSites(cachedSites, miles);
+  }, 150);
+});
+const SCALE = 1.8;
+
+// ---- Munsell HVC to RGB ----
+// Converts Munsell hue (0-100), value (0-10), chroma (0-20+) to [r, g, b].
+// Uses HSL as an intermediate with empirical mappings tuned for soil colors.
+
+const HUE_BASES = { R: 0, YR: 10, Y: 20, GY: 30, G: 40, BG: 50, B: 60, PB: 70, P: 80, RP: 90 };
+
+// Munsell hue (0-100) → approximate HSL hue degrees
+const HUE_TABLE = [[0,8],[10,22],[20,40],[30,65],[40,105],[50,155],[60,205],[70,248],[80,280],[90,335],[100,368]];
+function munsellHueToDeg(h) {
+  for (let i = 0; i < HUE_TABLE.length - 1; i++) {
+    if (h <= HUE_TABLE[i+1][0]) {
+      const t = (h - HUE_TABLE[i][0]) / (HUE_TABLE[i+1][0] - HUE_TABLE[i][0]);
+      return (HUE_TABLE[i][1] + t * (HUE_TABLE[i+1][1] - HUE_TABLE[i][1])) % 360;
+    }
+  }
+  return 8;
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  function hue2rgb(t) {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  }
+  return [Math.round(hue2rgb(h+1/3)*255), Math.round(hue2rgb(h)*255), Math.round(hue2rgb(h-1/3)*255)];
+}
+
+function hvcToRgb(h, v, c) {
+  if (v == null) return null;
+  const hDeg = munsellHueToDeg(h || 0);
+  const l = Math.pow(v / 10, 1.15);
+  const s = c === 0 ? 0 : c / (c + 5 + (10 - v) * 0.5);
+  return hslToRgb(hDeg / 360, s, l);
+}
+
+// Parse Munsell string like "7.5YR 6/2" or "10.0YR 3/1" into [h, v, c]
+function parseMunsellString(str) {
+  if (!str) return null;
+  const m = str.trim().match(/^([\d.]+)\s*(RP|GY|BG|PB|YR|R|Y|G|B|P)\s+([\d.]+)\/([\d.]+)$/);
+  if (!m) return null;
+  return [parseFloat(m[1]) + (HUE_BASES[m[2]] || 0), parseFloat(m[3]), parseFloat(m[4])];
+}
+
+function munsellStringToRgb(str) {
+  const hvc = parseMunsellString(str);
+  return hvc ? hvcToRgb(hvc[0], hvc[1], hvc[2]) : null;
+}
+
+function rgbStr(rgb) { return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; }
+function textColor(rgb) { return (rgb[0]*0.299 + rgb[1]*0.587 + rgb[2]*0.114) > 160 ? '#333' : '#f0ece4'; }
+
+const TEXTURE_LABELS = {
+  SANDY_LOAM: 'Sandy Loam', SAND: 'Sand', CLAY_LOAM: 'Clay Loam',
+  SANDY_CLAY: 'Sandy Clay', LOAM: 'Loam', LOAMY_SAND: 'Loamy Sand',
+  SILT_LOAM: 'Silt Loam', CLAY: 'Clay', SILTY_CLAY: 'Silty Clay',
+  SILTY_CLAY_LOAM: 'Silty Clay Loam', SANDY_CLAY_LOAM: 'Sandy Clay Loam',
+  SILT: 'Silt', LOAMY_FINE_SAND: 'Loamy Fine Sand',
+};
+
+const ROCK_LABELS = {
+  VOLUME_0_1: '0\u20131%', VOLUME_1_15: '1\u201315%', VOLUME_15_35: '15\u201335%',
+  VOLUME_35_60: '35\u201360%', VOLUME_GREATER_60: '>60%',
+};
+
+// ---- Reverse geocoding (Nominatim, 1 req/sec) ----
+
+const geocodeCache = {};
+const geocodeQueue = [];
+let geocodeRunning = false;
+
+function processGeocodeQueue() {
+  if (geocodeRunning || !geocodeQueue.length) return;
+  geocodeRunning = true;
+  const { lat, lon, el } = geocodeQueue.shift();
+  const key = `${lat},${lon}`;
+
+  if (geocodeCache[key]) {
+    el.textContent = geocodeCache[key];
+    geocodeRunning = false;
+    processGeocodeQueue();
+    return;
+  }
+
+  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`, {
+    headers: { 'Accept-Language': 'en' },
+  })
+    .then(r => r.json())
+    .then(data => {
+      const a = data.address || {};
+      const parts = [
+        a.country,
+        a.state || a.region || a.province || a.county,
+        a.city || a.town || a.village || a.hamlet || a.municipality,
+      ].filter(Boolean);
+      const label = parts.length ? '(' + parts.join(', ') + ')' : '';
+      geocodeCache[key] = label;
+      el.textContent = label;
+    })
+    .catch(() => {})
+    .finally(() => {
+      geocodeRunning = false;
+      setTimeout(processGeocodeQueue, 1100); // respect 1 req/sec
+    });
+}
+
+function queueGeocode(lat, lon, el) {
+  const key = `${lat},${lon}`;
+  if (geocodeCache[key]) {
+    el.textContent = geocodeCache[key];
+    return;
+  }
+  geocodeQueue.push({ lat, lon, el });
+  processGeocodeQueue();
+}
+
+// ---- Rendering ----
+
+function renderCard(site, num) {
+  const matches = (site.soil_id && site.soil_id.matches) || [];
+  const sd = site.soilData || {};
+  const intervals = (sd._depthIntervals || []).filter(d =>
+    d.depthIntervalStart != null && d.depthIntervalEnd != null
+  );
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'site-' + site.id;
+
+  // Header with numbered badge (clickable to scroll back to map)
+  const header = document.createElement('div');
+  header.className = 'card-header';
+  header.innerHTML = `<h2><a class="site-badge" href="#" data-site-num="${num}">${num}</a>${esc(site.name)}</h2><div class="coords">${site.latitude}, ${site.longitude} <span class="location-name"></span></div>`;
+  header.querySelector('.site-badge').addEventListener('click', (e) => {
+    e.preventDefault();
+    // Find the group map container for this card
+    const group = card.closest('.site-group');
+    if (group) {
+      group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Open this site's marker popup
+      const mapData = group._mapData;
+      if (mapData) {
+        const entry = mapData.markers.find(m => m.num === num);
+        if (entry) {
+          // If clustered, spiderfy first
+          mapData.clusterGroup.zoomToShowLayer(entry.marker, () => {
+            entry.marker.openPopup();
+          });
+        }
+      }
+    }
+  });
+  card.appendChild(header);
+
+  // Queue reverse geocoding for location name
+  if (site.latitude != null && site.longitude != null) {
+    queueGeocode(site.latitude, site.longitude, header.querySelector('.location-name'));
+  }
+
+  // Surface observations bar
+  const obsRows = [];
+  if (sd.slopeSteepnessSelect) obsRows.push(['Slope', sd.slopeSteepnessSelect]);
+  if (sd.downSlope) obsRows.push(['Down Slope', sd.downSlope]);
+  if (sd.crossSlope) obsRows.push(['Cross Slope', sd.crossSlope]);
+  if (sd.surfaceCracksSelect) obsRows.push(['Surface Cracks', sd.surfaceCracksSelect]);
+  if (obsRows.length) {
+    const bar = document.createElement('div');
+    bar.className = 'obs-bar';
+    obsRows.forEach(([k, v]) => {
+      const item = document.createElement('div');
+      item.className = 'obs-item';
+      item.innerHTML = `<span>${esc(k)}:</span><span>${esc(v)}</span>`;
+      bar.appendChild(item);
+    });
+    card.appendChild(bar);
+  }
+
+  // Tabs for SSURGO matches
+  const tabsRow = document.createElement('div');
+  tabsRow.className = 'tabs-row';
+
+  const tabBar = document.createElement('div');
+  tabBar.className = 'tabs';
+
+  const matchMeta = document.createElement('div');
+  matchMeta.className = 'match-meta';
+
+  // Comparison area (will be re-rendered when tabs switch)
+  const comparison = document.createElement('div');
+  comparison.className = 'comparison';
+
+  function selectMatch(match) {
+    const series = match.soilInfo.soilSeries;
+    const loc = match.locationMatch || {};
+    matchMeta.innerHTML =
+      `<strong>${esc(series.name)}</strong>` +
+      (series.taxonomySubgroup ? ` &mdash; ${esc(series.taxonomySubgroup)}` : '') +
+      (loc.score != null ? ` &middot; Score: ${(loc.score * 100).toFixed(1)}%` : '') +
+      (match.distanceToNearestMapUnitM != null ? ` &middot; ${match.distanceToNearestMapUnitM}m to map unit` : '');
+    renderComparison(comparison, intervals, match);
+  }
+
+  matches.forEach((match, i) => {
+    const name = match.soilInfo.soilSeries.name;
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' active' : '');
+    btn.textContent = name;
+    btn.addEventListener('click', () => {
+      tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      selectMatch(match);
+    });
+    tabBar.appendChild(btn);
+  });
+
+  tabsRow.appendChild(tabBar);
+  tabsRow.appendChild(matchMeta);
+  card.appendChild(tabsRow);
+  card.appendChild(comparison);
+
+  if (matches.length) selectMatch(matches[0]);
+
+  return card;
+}
+
+function buildRuler(height, ticks) {
+  const ruler = document.createElement('div');
+  ruler.className = 'ruler';
+  ruler.style.height = height + 'px';
+  [...ticks].sort((a,b) => a - b).forEach(d => {
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.top = (d * SCALE) + 'px';
+    tick.innerHTML = `<span>${d}</span>`;
+    ruler.appendChild(tick);
+  });
+  return ruler;
+}
+
+function renderComparison(container, intervals, match) {
+  container.innerHTML = '';
+  const matchLayers = (match.soilInfo.soilData && match.soilInfo.soilData.depthDependentData) || [];
+
+  // Compute shared max depth so both columns use identical scale
+  const collectedMax = intervals.length ? Math.max(...intervals.map(d => d.depthIntervalEnd)) : 0;
+  const matchMax = matchLayers.length ? Math.max(...matchLayers.map(l => l.depthInterval.end)) : 0;
+  const maxDepth = Math.max(collectedMax, matchMax, 10);
+  const height = maxDepth * SCALE;
+
+  // Tick sets for each ruler (each shows its own layer boundaries)
+  const collectedTicks = new Set([0, maxDepth]);
+  intervals.forEach(d => { collectedTicks.add(d.depthIntervalStart); collectedTicks.add(d.depthIntervalEnd); });
+
+  const matchTicks = new Set([0, maxDepth]);
+  matchLayers.forEach(l => { matchTicks.add(l.depthInterval.start); matchTicks.add(l.depthInterval.end); });
+
+  // -- Collected: ruler + column --
+  const collectedGroup = document.createElement('div');
+  collectedGroup.className = 'profile-group collected-col';
+
+  const collectedLabel = document.createElement('div');
+  collectedLabel.className = 'col-label col-label-collected';
+  collectedLabel.textContent = 'Collected';
+  collectedGroup.appendChild(collectedLabel);
+
+  const collectedInner = document.createElement('div');
+  collectedInner.className = 'profile-inner';
+  collectedInner.appendChild(buildRuler(height, collectedTicks));
+
+  const collectedCol = document.createElement('div');
+  collectedCol.className = 'column';
+  collectedCol.style.height = height + 'px';
+
+  if (intervals.length) {
+    intervals.forEach(d => {
+      const top = d.depthIntervalStart * SCALE;
+      const h = (d.depthIntervalEnd - d.depthIntervalStart) * SCALE;
+      const rgb = (d.colorHue != null && d.colorValue != null && d.colorChroma != null)
+        ? hvcToRgb(d.colorHue, d.colorValue, d.colorChroma)
+        : munsellStringToRgb(d._colorMunsell);
+
+      const layer = document.createElement('div');
+      layer.className = 'layer' + (rgb ? '' : ' missing-color');
+      layer.style.top = top + 'px';
+      layer.style.height = h + 'px';
+      if (rgb) {
+        layer.style.backgroundColor = rgbStr(rgb);
+        layer.style.color = textColor(rgb);
+      }
+
+      const texLabel = d.texture ? (TEXTURE_LABELS[d.texture] || d.texture) : null;
+      if (texLabel) {
+        layer.innerHTML = `<span class="tex">${esc(texLabel)}</span>`;
+      } else {
+        const colorLabel = d._colorMunsell || '';
+        layer.innerHTML = colorLabel
+          ? `<span class="tex" style="font-size:0.7rem">${esc(colorLabel)}</span>`
+          : `<span class="tex unknown">No data</span>`;
+      }
+      if (h > 30) {
+        layer.innerHTML += `<span class="depth-label">${d.depthIntervalStart}\u2013${d.depthIntervalEnd} cm</span>`;
+      }
+
+      layer.dataset.tip = JSON.stringify({
+        type: 'collected',
+        depth: `${d.depthIntervalStart}\u2013${d.depthIntervalEnd} cm`,
+        texture: texLabel || 'Not recorded',
+        color: d._colorMunsell || 'Not recorded',
+        condition: d.colorPhotoSoilCondition || '',
+        lighting: d.colorPhotoLightingCondition || '',
+      });
+      layer.addEventListener('mouseenter', showCollectedTooltip);
+      layer.addEventListener('mousemove', moveTooltip);
+      layer.addEventListener('mouseleave', hideTooltip);
+
+      collectedCol.appendChild(layer);
+    });
+  } else {
+    const msg = document.createElement('div');
+    msg.className = 'no-data-msg';
+    msg.textContent = 'No samples';
+    collectedCol.appendChild(msg);
+  }
+
+  collectedInner.appendChild(collectedCol);
+  collectedGroup.appendChild(collectedInner);
+  container.appendChild(collectedGroup);
+
+  // Gap
+  const gap = document.createElement('div');
+  gap.className = 'col-gap';
+  container.appendChild(gap);
+
+  // -- SSURGO match: ruler + column --
+  const matchGroup = document.createElement('div');
+  matchGroup.className = 'profile-group';
+
+  const matchLabel = document.createElement('div');
+  matchLabel.className = 'col-label col-label-match';
+  matchLabel.textContent = 'SSURGO Match';
+  matchGroup.appendChild(matchLabel);
+
+  const matchInner = document.createElement('div');
+  matchInner.className = 'profile-inner';
+  matchInner.appendChild(buildRuler(height, matchTicks));
+
+  const matchCol = document.createElement('div');
+  matchCol.className = 'column';
+  matchCol.style.height = height + 'px';
+
+  if (matchLayers.length) {
+    matchLayers.forEach(l => {
+      const top = l.depthInterval.start * SCALE;
+      const h = (l.depthInterval.end - l.depthInterval.start) * SCALE;
+      const rgb = munsellStringToRgb(l.munsellColorString);
+
+      const layer = document.createElement('div');
+      layer.className = 'layer' + (rgb ? '' : ' missing-color');
+      layer.style.top = top + 'px';
+      layer.style.height = h + 'px';
+      if (rgb) {
+        layer.style.backgroundColor = rgbStr(rgb);
+        layer.style.color = textColor(rgb);
+      }
+
+      const texLabel = TEXTURE_LABELS[l.texture] || (l.texture ? l.texture : null);
+      if (texLabel) {
+        layer.innerHTML = `<span class="tex">${esc(texLabel)}</span>`;
+      } else {
+        layer.innerHTML = `<span class="tex unknown">Unknown</span>`;
+      }
+      if (h > 40) {
+        layer.innerHTML += `<span class="depth-label">${l.depthInterval.start}\u2013${l.depthInterval.end} cm</span>`;
+      }
+
+      layer.dataset.tip = JSON.stringify({
+        depth: `${l.depthInterval.start}\u2013${l.depthInterval.end} cm`,
+        texture: texLabel || 'Unknown',
+        color: l.munsellColorString || 'Not recorded',
+        rock: ROCK_LABELS[l.rockFragmentVolume] || l.rockFragmentVolume || 'Unknown',
+        series: match.soilInfo.soilSeries.name,
+        taxonomy: match.soilInfo.soilSeries.taxonomySubgroup || '',
+      });
+      layer.addEventListener('mouseenter', showMatchTooltip);
+      layer.addEventListener('mousemove', moveTooltip);
+      layer.addEventListener('mouseleave', hideTooltip);
+
+      matchCol.appendChild(layer);
+    });
+  } else {
+    const msg = document.createElement('div');
+    msg.className = 'no-data-msg';
+    msg.textContent = 'No depth data';
+    matchCol.appendChild(msg);
+  }
+
+  matchInner.appendChild(matchCol);
+  matchGroup.appendChild(matchInner);
+  container.appendChild(matchGroup);
+}
+
+// ---- Tooltips ----
+const tip = document.getElementById('tooltip');
+
+function showMatchTooltip(e) {
+  const d = JSON.parse(e.currentTarget.dataset.tip);
+  tip.innerHTML =
+    `<dl>` +
+    `<dt>Series</dt><dd>${esc(d.series)}${d.taxonomy ? ' &mdash; ' + esc(d.taxonomy) : ''}</dd>` +
+    `<dt>Depth</dt><dd>${d.depth}</dd>` +
+    `<dt>Texture</dt><dd>${esc(d.texture)}</dd>` +
+    `<dt>Munsell Color</dt><dd>${esc(d.color)}</dd>` +
+    `<dt>Rock Fragments</dt><dd>${d.rock}</dd>` +
+    `</dl>`;
+  tip.classList.add('show');
+  moveTooltip(e);
+}
+
+function showCollectedTooltip(e) {
+  const d = JSON.parse(e.currentTarget.dataset.tip);
+  let html = `<dl><dt>Collected Sample</dt><dd>${d.depth}</dd>`;
+  html += `<dt>Texture</dt><dd>${esc(d.texture)}</dd>`;
+  html += `<dt>Munsell Color</dt><dd>${esc(d.color)}</dd>`;
+  if (d.condition) html += `<dt>Soil Condition</dt><dd>${esc(d.condition)}</dd>`;
+  if (d.lighting) html += `<dt>Lighting</dt><dd>${esc(d.lighting)}</dd>`;
+  html += '</dl>';
+  tip.innerHTML = html;
+  tip.classList.add('show');
+  moveTooltip(e);
+}
+
+function moveTooltip(e) {
+  const pad = 14;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  const rect = tip.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) x = e.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight) y = e.clientY - rect.height - pad;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+
+function hideTooltip() { tip.classList.remove('show'); }
+
+function esc(s) {
+  const d = document.createElement('span');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ---- Geo clustering ----
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function clusterSites(sites, maxMiles) {
+  // Union-find clustering: sites within maxMiles of each other are grouped
+  const parent = sites.map((_, i) => i);
+  function find(i) { return parent[i] === i ? i : (parent[i] = find(parent[i])); }
+  function union(a, b) { parent[find(a)] = find(b); }
+
+  for (let i = 0; i < sites.length; i++) {
+    for (let j = i + 1; j < sites.length; j++) {
+      if (sites[i].latitude == null || sites[j].latitude == null) continue;
+      if (haversineMiles(sites[i].latitude, sites[i].longitude, sites[j].latitude, sites[j].longitude) <= maxMiles) {
+        union(i, j);
+      }
+    }
+  }
+
+  const groups = {};
+  sites.forEach((site, i) => {
+    const root = find(i);
+    if (!groups[root]) groups[root] = [];
+    groups[root].push(site);
+  });
+  return Object.values(groups);
+}
+
+// ---- Map per group ----
+
+function renderGroupMap(container, sitesWithNums) {
+  const mapDiv = document.createElement('div');
+  mapDiv.className = 'group-map';
+  const mapEl = document.createElement('div');
+  mapEl.style.height = '300px';
+  mapDiv.appendChild(mapEl);
+  container.appendChild(mapDiv);
+
+  // Defer map init until element is in DOM
+  requestAnimationFrame(() => {
+    const map = L.map(mapEl);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const clusterGroup = L.markerClusterGroup({
+      maxClusterRadius: 35,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      spiderfyDistanceMultiplier: 2.5,
+      iconCreateFunction: function(cluster) {
+        const nums = cluster.getAllChildMarkers().map(m => m._siteNum).sort((a,b) => a - b);
+        const label = nums.length <= 3 ? nums.join(', ') : nums[0] + '\u2013' + nums[nums.length - 1];
+        return L.divIcon({
+          className: '',
+          html: `<div class="cluster-icon">${label}</div>`,
+          iconSize: [null, 28],
+          iconAnchor: [0, 14],
+        });
+      },
+    });
+
+    const markerRefs = [];
+    const bounds = [];
+    sitesWithNums.forEach(({ site, num }) => {
+      if (site.latitude == null || site.longitude == null) return;
+      const latlng = [site.latitude, site.longitude];
+      bounds.push(latlng);
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="numbered-marker">${num}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -16],
+      });
+
+      const marker = L.marker(latlng, { icon });
+      marker._siteNum = num;
+      marker.bindPopup(`<strong>${num}. ${esc(site.name)}</strong><br>${site.latitude}, ${site.longitude}`);
+      marker.on('click', () => {
+        const el = document.getElementById('site-' + site.id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      clusterGroup.addLayer(marker);
+      markerRefs.push({ num, marker });
+    });
+
+    // Expose map data so badge clicks can find markers
+    container._mapData = { clusterGroup, markers: markerRefs };
+
+    map.addLayer(clusterGroup);
+
+    if (bounds.length === 1) {
+      map.setView(bounds[0], 14);
+    } else if (bounds.length > 1) {
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  });
+}
+
+// ---- Render sites with grouping ----
+
+function renderSites(sites, clusterMiles) {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  if (!sites.length) {
+    app.innerHTML = '<p style="text-align:center;padding:40px;color:#999;">No sites found.</p>';
+    return;
+  }
+
+  const groups = clusterSites(sites, clusterMiles);
+  let siteNum = 1;
+
+  groups.forEach(groupSites => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'site-group';
+
+    const sitesWithNums = groupSites.map(site => ({ site, num: siteNum++ }));
+
+    renderGroupMap(groupEl, sitesWithNums);
+
+    const cardsEl = document.createElement('div');
+    cardsEl.className = 'group-cards';
+    sitesWithNums.forEach(({ site, num }) => {
+      cardsEl.appendChild(renderCard(site, num));
+    });
+    groupEl.appendChild(cardsEl);
+
+    app.appendChild(groupEl);
+  });
+}
+
+// ---- Data fetching ----
+async function fetchData() {
+  const loading = document.getElementById('loading');
+  const error = document.getElementById('error');
+
+  loading.style.display = '';
+  error.style.display = 'none';
+  document.getElementById('app').innerHTML = '';
+
+  try {
+    const res = await fetch(getParams().data);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    loading.style.display = 'none';
+    cachedSites = data.sites || [];
+    renderSites(cachedSites, sliderToMiles(clusterSlider.value));
+  } catch (err) {
+    loading.style.display = 'none';
+    error.style.display = '';
+    document.getElementById('error-msg').textContent = 'Failed to load data: ' + err.message;
+  }
+}
+
+if (getParams().data) fetchData();
+</script>
+</body>
+</html>
