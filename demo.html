@@ -449,24 +449,29 @@ function renderCard(site, num) {
     renderComparison(comparison, intervals, match);
   }
 
-  // Sort matches by combined score (best first)
+  // Score helpers — use combined if available, fall back to location or data
   function getScore(m, key) {
     const obj = m[key + 'Match'];
     return obj && obj.score != null ? obj.score : null;
   }
-  const sorted = [...matches].sort((a, b) => (getScore(b, 'combined') || 0) - (getScore(a, 'combined') || 0));
+  function bestScore(m) {
+    return getScore(m, 'combined') ?? getScore(m, 'location') ?? getScore(m, 'data');
+  }
+
+  // Sort matches by best available score (highest first)
+  const sorted = [...matches].sort((a, b) => (bestScore(b) || 0) - (bestScore(a) || 0));
 
   sorted.forEach((match, i) => {
     const name = match.soilInfo.soilSeries.name;
-    const cs = getScore(match, 'combined');
-    const scoreStr = cs != null ? ` ${(cs * 100).toFixed(0)}%` : '';
+    const sc = bestScore(match);
     const rating = match.userRating;
     const ratingHtml = rating === 'SELECTED' ? ' <span class="rating rating-yes">&#10003;</span>'
       : rating === 'REJECTED' ? ' <span class="rating rating-no">&#10007;</span>'
       : '';
     const btn = document.createElement('button');
     btn.className = 'tab' + (i === 0 ? ' active' : '');
-    btn.innerHTML = esc(name) + esc(scoreStr) + ratingHtml;
+    const scoreBadge = sc != null ? ` <span style="opacity:0.75">${(sc * 100).toFixed(0)}%</span>` : '';
+    btn.innerHTML = esc(name) + scoreBadge + ratingHtml;
     btn.addEventListener('click', () => {
       tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
