@@ -506,7 +506,8 @@ function buildRuler(height, ticks) {
 
 function renderComparison(container, intervals, match) {
   container.innerHTML = '';
-  const matchLayers = (match.soilInfo.soilData && match.soilInfo.soilData.depthDependentData) || [];
+  const matchLayers = ((match.soilInfo.soilData && match.soilInfo.soilData.depthDependentData) || [])
+    .filter(l => l.depthInterval.end > l.depthInterval.start);
 
   // Compute shared max depth so both columns use identical scale
   const collectedMax = intervals.length ? Math.max(...intervals.map(d => d.depthIntervalEnd)) : 0;
